@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Event Dashboard Prototype</title>
+  <style>
+    body {
+      background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      margin-bottom: 24px;
+      color: #334e68;
+    }
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit,minmax(300px,1fr));
+      gap: 16px;
+    }
+    .widget {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      padding: 20px;
+      position: relative;
+      transition: background-color 0.3s ease;
+    }
+    .widget.red {
+      background-color: #f8d7da;
+    }
+    .widget.yellow {
+      background-color: #fff3cd;
+    }
+    .widget.green {
+      background-color: #d4edda;
+    }
+    .widget h2 {
+      margin-top: 0;
+      font-size: 20px;
+      color: #102a43;
+    }
+    .label {
+      font-weight: bold;
+      margin-top: 12px;
+      margin-bottom: 4px;
+      color: #334e68;
+      font-size: 14px;
+    }
+    textarea, input[type="text"] {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+      resize: vertical;
+      font-family: inherit;
+    }
+    .menu-button {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+      color: #627d98;
+    }
+    .menu-content {
+      position: absolute;
+      top: 40px;
+      right: 16px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      display: none;
+      z-index: 10;
+    }
+    .menu-content button {
+      display: block;
+      padding: 8px 12px;
+      width: 100%;
+      background: none;
+      border: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 14px;
+      color: #334e68;
+    }
+    .menu-content button:hover {
+      background-color: #eee;
+    }
+  </style>
+</head>
+<body>
+  <h1>3449 Events</h1>
+  <div class="dashboard" id="dashboard">
+    <!-- Widgets inserted by JS -->
+  </div>
+
+<script>
+  const colors = ['red', 'yellow', 'green'];
+
+  function createWidget(index) {
+    const widget = document.createElement('div');
+    widget.classList.add('widget');
+
+    widget.innerHTML = `
+      <h2>Event Name: Test Event ${index + 1}</h2>
+      <button class="menu-button" aria-label="Open color menu">&#x22EE;</button>
+      <div class="menu-content" aria-hidden="true">
+        <button data-color="red">Red</button>
+        <button data-color="yellow">Yellow</button>
+        <button data-color="green">Green</button>
+      </div>
+      <div>
+        <div class="label">Event Description:</div>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+      </div>
+      <div>
+        <div class="label">Time:</div>
+        <p>12:00 PM - 2:00 PM, 25th June 2025</p>
+      </div>
+      <div>
+        <label class="label" for="impact-${index}">Impact:</label>
+        <textarea id="impact-${index}" rows="3" placeholder="Describe impact..."></textarea>
+      </div>
+      <div>
+        <label class="label" for="owner-${index}">Impact Owner:</label>
+        <input type="text" id="owner-${index}" placeholder="Enter name..." />
+      </div>
+      <div>
+        <label class="label" for="contact-${index}">Point of Contact:</label>
+        <input type="text" id="contact-${index}" placeholder="Enter contact..." />
+      </div>
+    `;
+
+    const menuButton = widget.querySelector('.menu-button');
+    const menuContent = widget.querySelector('.menu-content');
+
+    menuButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const visible = menuContent.style.display === 'block';
+      document.querySelectorAll('.menu-content').forEach(menu => menu.style.display = 'none');
+      menuContent.style.display = visible ? 'none' : 'block';
+    });
+
+    menuContent.querySelectorAll('button').forEach(button => {
+      button.addEventListener('click', () => {
+        const color = button.getAttribute('data-color');
+        widget.classList.remove(...colors);
+        widget.classList.add(color);
+        menuContent.style.display = 'none';
+      });
+    });
+
+    return widget;
+  }
+
+  const dashboard = document.getElementById('dashboard');
+  for(let i=0; i<12; i++) {
+    dashboard.appendChild(createWidget(i));
+  }
+
+  document.body.addEventListener('click', () => {
+    document.querySelectorAll('.menu-content').forEach(menu => menu.style.display = 'none');
+  });
+</script>
+</body>
+</html>

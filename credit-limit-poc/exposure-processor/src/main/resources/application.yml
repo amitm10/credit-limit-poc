@@ -1,0 +1,59 @@
+server:
+  port: 8081
+  shutdown: graceful
+
+spring:
+  application:
+    name: exposure-processor
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 500ms
+  kafka:
+    bootstrap-servers: localhost:29092
+    consumer:
+      group-id: exposure-processor
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        max.block.ms: 1000
+    listener:
+      # Offsets are committed after each poll's records have been applied and published.
+      ack-mode: batch
+      # 24 partitions spread over 3 consumer threads (scale out with more instances).
+      concurrency: 3
+
+credit:
+  terminal-ttl: 10m
+  expired-ttl: 24h
+  orphan-timeout: 30s
+  publish-timeout: 2s
+  reconcile-on-failover: false
+  failover-rebuild-delay: 3s
+  sweep-interval-ms: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    org.apache.kafka: WARN

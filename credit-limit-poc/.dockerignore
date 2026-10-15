@@ -1,0 +1,6 @@
+# Only the built jars are needed in the build context.
+**
+!credit-check-api/target/credit-check-api.jar
+!exposure-processor/target/exposure-processor.jar
+!limit-loader/target/limit-loader.jar
+!gateway-simulator/target/gateway-simulator.jar

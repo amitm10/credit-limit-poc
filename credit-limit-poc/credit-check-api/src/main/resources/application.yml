@@ -1,0 +1,70 @@
+# Defaults for running on the host against localhost (single Redis, Kafka on 29092).
+# The docker profile (application-docker.yml) switches to Sentinel and the compose network.
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: credit-check-api
+  threads:
+    virtual:
+      enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 300ms
+      connect-timeout: 2s
+      lettuce:
+        pool:
+          enabled: true
+          max-active: 64
+          max-idle: 64
+          min-idle: 8
+          max-wait: 1s
+  kafka:
+    bootstrap-servers: localhost:29092
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        linger.ms: 0
+        # Fail fast when Kafka is down instead of blocking the request thread for 60 s.
+        max.block.ms: 500
+        request.timeout.ms: 1000
+        delivery.timeout.ms: 2000
+
+credit:
+  jwt-secret: ${CREDIT_JWT_SECRET:local-dev-secret-change-me-32-bytes-minimum}
+  terminal-ttl: 10m
+  kafka-publish-timeout: 1s
+  wait-replicas: 0
+  wait-timeout: 5ms
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,redis,kafka
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+logging:
+  level:
+    root: INFO
+    org.apache.kafka: WARN

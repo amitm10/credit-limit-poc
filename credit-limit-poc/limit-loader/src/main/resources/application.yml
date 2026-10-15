@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: limit-loader
+  main:
+    web-application-type: none
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2s
+  kafka:
+    bootstrap-servers: localhost:29092
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        linger.ms: 20
+
+logging:
+  level:
+    org.apache.kafka: WARN

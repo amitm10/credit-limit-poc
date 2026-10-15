@@ -1,0 +1,11 @@
+spring:
+  data:
+    redis:
+      sentinel:
+        master: credit-redis
+        nodes: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+  kafka:
+    bootstrap-servers: kafka:9092
+
+credit:
+  reconcile-on-failover: true

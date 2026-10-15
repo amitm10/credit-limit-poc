@@ -1,0 +1,213 @@
+name: credit-poc
+
+# Build the jars first:  mvn clean package -DskipTests
+# Then:                  docker compose up -d --build
+# Everything is multi-arch, so it runs natively on Apple Silicon.
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment: &app-env
+    SPRING_PROFILES_ACTIVE: docker
+    CREDIT_JWT_SECRET: poc-demo-secret-change-me-at-least-32-bytes
+    JAVA_OPTS: -Xms128m -Xmx384m
+  depends_on: &app-deps
+    kafka-init:
+      condition: service_completed_successfully
+    redis-sentinel-1:
+      condition: service_started
+    redis-sentinel-2:
+      condition: service_started
+    redis-sentinel-3:
+      condition: service_started
+
+x-api: &api
+  <<: *app
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      MODULE: credit-check-api
+  image: credit-poc/credit-check-api
+  environment:
+    <<: *app-env
+    SPRING_PROFILES_ACTIVE: docker,dev
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health/readiness || exit 1"]
+    interval: 5s
+    timeout: 3s
+    retries: 30
+    start_period: 20s
+
+services:
+
+  # ---------- Kafka (single broker, KRaft mode, no ZooKeeper) ----------
+  kafka:
+    image: apache/kafka:3.9.1
+    hostname: kafka
+    ports:
+      - "29092:29092"   # for tools on your Mac; services use kafka:9092
+    environment:
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 15s
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./infra/kafka/create-topics.sh:/scripts/create-topics.sh:ro
+    entrypoint: ["sh", "/scripts/create-topics.sh"]
+    restart: "no"
+
+  # ---------- Redis: primary + replica, watched by 3 Sentinels ----------
+  redis-primary:
+    image: redis:7.4-alpine
+    hostname: redis-primary
+    command: >
+      redis-server --appendonly yes --appendfsync everysec
+      --replica-announce-ip redis-primary
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  redis-replica:
+    image: redis:7.4-alpine
+    hostname: redis-replica
+    command: >
+      redis-server --appendonly yes --appendfsync everysec
+      --replicaof redis-primary 6379 --replica-announce-ip redis-replica
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  redis-sentinel-1: &sentinel
+    image: redis:7.4-alpine
+    hostname: redis-sentinel-1
+    environment:
+      SENTINEL_HOST: redis-sentinel-1
+    volumes:
+      - ./infra/redis/sentinel.sh:/sentinel.sh:ro
+    entrypoint: ["sh", "/sentinel.sh"]
+    depends_on:
+      redis-primary:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+
+  redis-sentinel-2:
+    <<: *sentinel
+    hostname: redis-sentinel-2
+    environment:
+      SENTINEL_HOST: redis-sentinel-2
+
+  redis-sentinel-3:
+    <<: *sentinel
+    hostname: redis-sentinel-3
+    environment:
+      SENTINEL_HOST: redis-sentinel-3
+
+  # ---------- Services ----------
+  limit-loader:
+    <<: *app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: limit-loader
+    image: credit-poc/limit-loader
+    restart: on-failure
+
+  credit-api-1:
+    <<: *api
+    hostname: credit-api-1
+
+  credit-api-2:
+    <<: *api
+    hostname: credit-api-2
+
+  credit-api-3:
+    <<: *api
+    hostname: credit-api-3
+
+  exposure-processor:
+    <<: *app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: exposure-processor
+    image: credit-poc/exposure-processor
+    hostname: exposure-processor
+    environment:
+      <<: *app-env
+      JAVA_OPTS: -Xms256m -Xmx768m
+    ports:
+      - "8081:8081"   # admin: POST /admin/rebuild, GET /admin/status, /actuator/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8081/actuator/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  nginx:
+    image: nginx:1.28-alpine
+    ports:
+      - "8080:8080"   # the credit API, load-balanced over 3 instances
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      credit-api-1:
+        condition: service_started
+      credit-api-2:
+        condition: service_started
+      credit-api-3:
+        condition: service_started
+
+  # Not started by `up`. Run with: docker compose run --rm gateway-simulator --sim.mode=...
+  gateway-simulator:
+    <<: *app
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODULE: gateway-simulator
+    image: credit-poc/gateway-simulator
+    profiles: ["sim"]
+    restart: "no"
+    environment:
+      <<: *app-env
+      JAVA_OPTS: -Xms256m -Xmx512m
+    depends_on:
+      nginx:
+        condition: service_started
